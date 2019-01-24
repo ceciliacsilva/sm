@@ -12,58 +12,25 @@ use crate::sm::state::State;
 pub(crate) struct Transitions(pub Vec<Transition>);
 
 impl Parse for Transitions {
-    /// example transitions tokens:
-    ///
-    /// ```text
-    /// Push { ... }
-    /// Coin { ... }
-    /// ```
-    ///
     fn parse(input: ParseStream<'_>) -> Result<Self> {
         let mut transitions: Vec<Transition> = Vec::new();
         while !input.is_empty() {
-            // `Coin { Locked, Unlocked => Unlocked }`
-            //  ^^^^
+            // 'Coin { Locked => Unlocked }
+            // ^^^^
             let event = Event::parse(input)?;
 
-            // `Coin { Locked, Unlocked => Unlocked }`
-            //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            // 'Coin { Locked => Unlocked }
+            //         ^^^^^^^^^^^^^^^^^
             let block_transition;
             braced!(block_transition in input);
 
-            while !block_transition.is_empty() {
-                let mut from_states: Vec<State> = Vec::new();
+            let from = State::parse(&block_transition)?;
 
-                // `Coin { Locked, Unlocked => Unlocked }`
-                //                          ^^
-                while !block_transition.peek(Token![=>]) {
-                    // `Coin { Locked, Unlocked => Unlocked }`
-                    //               ^
-                    if block_transition.peek(Token![,]) {
-                        let _: Comma = block_transition.parse()?;
-                        continue;
-                    }
+            let _: Token![=>] = block_transition.parse()?;
 
-                    // `Coin { Locked, Unlocked => Unlocked }`
-                    //         ^^^^^^  ^^^^^^^^
-                    from_states.push(State::parse(&block_transition)?);
-                }
+            let to = State::parse(&block_transition)?;
 
-                // `Coin { Locked, Unlocked => Unlocked }`
-                //                          ^^
-                let _: Token![=>] = block_transition.parse()?;
-
-                // `Coin { Locked, Unlocked => Unlocked }`
-                //                             ^^^^^^^^
-                let to = State::parse(&block_transition)?;
-
-                for from in from_states {
-                    let event = event.clone();
-                    let to = to.clone();
-
-                    transitions.push(Transition { event, from, to })
-                }
-            }
+            transitions.push(Transition { event, from, to });
         }
 
         Ok(Transitions(transitions))
@@ -144,8 +111,8 @@ mod tests {
     #[test]
     fn test_transitions_parse() {
         let left: Transitions = syn::parse2(quote! {
-            Push { Locked, Unlocked => Locked }
-            Coin { Locked, Unlocked => Unlocked }
+            Push { Unlocked => Locked }
+            Coin { Locked => Unlocked }
         }).unwrap();
 
         let right = Transitions(vec![
@@ -154,17 +121,6 @@ mod tests {
                     name: parse_quote! { Push },
                 },
                 from: State {
-                    name: parse_quote! { Locked },
-                },
-                to: State {
-                    name: parse_quote! { Locked },
-                },
-            },
-            Transition {
-                event: Event {
-                    name: parse_quote! { Push },
-                },
-                from: State {
                     name: parse_quote! { Unlocked },
                 },
                 to: State {
@@ -177,17 +133,6 @@ mod tests {
                 },
                 from: State {
                     name: parse_quote! { Locked },
-                },
-                to: State {
-                    name: parse_quote! { Unlocked },
-                },
-            },
-            Transition {
-                event: Event {
-                    name: parse_quote! { Coin },
-                },
-                from: State {
-                    name: parse_quote! { Unlocked },
                 },
                 to: State {
                     name: parse_quote! { Unlocked },
@@ -206,17 +151,6 @@ mod tests {
                     name: parse_quote! { Push },
                 },
                 from: State {
-                    name: parse_quote! { Locked },
-                },
-                to: State {
-                    name: parse_quote! { Locked },
-                },
-            },
-            Transition {
-                event: Event {
-                    name: parse_quote! { Push },
-                },
-                from: State {
                     name: parse_quote! { Unlocked },
                 },
                 to: State {
@@ -229,17 +163,6 @@ mod tests {
                 },
                 from: State {
                     name: parse_quote! { Locked },
-                },
-                to: State {
-                    name: parse_quote! { Unlocked },
-                },
-            },
-            Transition {
-                event: Event {
-                    name: parse_quote! { Coin },
-                },
-                from: State {
-                    name: parse_quote! { Unlocked },
                 },
                 to: State {
                     name: parse_quote! { Unlocked },
@@ -248,14 +171,6 @@ mod tests {
         ]);
 
         let left = quote! {
-            impl<E: Event> Transition<Push> for Machine<Locked, E> {
-                type Machine = Machine<Locked, Push>;
-
-                fn transition(self, event: Push) -> Self::Machine {
-                    Machine(Locked, Some(event))
-                }
-            }
-
             impl<E: Event> Transition<Push> for Machine<Unlocked, E> {
                 type Machine = Machine<Locked, Push>;
 
@@ -271,14 +186,6 @@ mod tests {
                     Machine(Unlocked, Some(event))
                 }
             }
-
-            impl<E: Event> Transition<Coin> for Machine<Unlocked, E> {
-                type Machine = Machine<Unlocked, Coin>;
-
-                fn transition(self, event: Coin) -> Self::Machine {
-                    Machine(Unlocked, Some(event))
-                }
-            }
         };
 
         let mut right = TokenStream::new();
@@ -287,3 +194,4 @@ mod tests {
         assert_eq!(format!("{}", left), format!("{}", right))
     }
 }
+
