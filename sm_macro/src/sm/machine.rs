@@ -239,6 +239,7 @@ impl ToTokens for Machine {
 }
 
 #[derive(Debug)]
+#[allow(single_use_lifetimes)]
 struct MachineEval<'a> {
     machine: &'a Machine,
 }
@@ -250,7 +251,7 @@ impl<'a> MachineEval<'a> {
             let name = t.event.name.clone();
             let from = t.from.name.clone();
 
-            if(from == state.name.clone()) {
+            if from == state.name.clone() {
                 result.push(Event{ name });
             }
         }
@@ -263,7 +264,7 @@ impl<'a> MachineEval<'a> {
 
         for s in &self.machine.initial_states.0 {
             let name = s.name.clone();
-            if (name == state.name.clone()) {
+            if name == state.name.clone() {
                 let variant = Ident::new(&format!("Initial{}", name), Span::call_site());
 
                 variants.push(variant);
@@ -279,7 +280,7 @@ impl<'a> MachineEval<'a> {
                 continue;
             }
 
-            if(to == state.name.clone()) {
+            if to == state.name.clone() {
                 variants.push(variant);
             }
         }
@@ -288,6 +289,7 @@ impl<'a> MachineEval<'a> {
     }
 }
 
+#[allow(single_use_lifetimes)]
 impl<'a> ToTokens for MachineEval<'a> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let name = &self.machine.name;
@@ -319,9 +321,14 @@ impl<'a> ToTokens for MachineEval<'a> {
 
                 for t in transitions {
                     let name = t.name.clone();
+                    let names_vars_guard = guard_resources.names();
+                    let names_vars_action = action_resources.names();
 
                     m_guards.push(quote!(
-                        #name::is_enabled() => { #name::action(); m.transition(#name).as_enum() },
+                        #name::is_enabled(#(#names_vars_guard)*,) => {
+                            #name::action(#(#names_vars_action)*,);
+                            m.transition(#name).as_enum()
+                        },
                     ));
                 }
 
@@ -661,8 +668,8 @@ mod tests {
                             },
                             Variant::InitialUnlocked(m) => {
                                 match true {
-                                    Push::is_enabled() => {
-                                        Push::action();
+                                    Push::is_enabled(a,) => {
+                                        Push::action(b,);
                                         m.transition(Push).as_enum()
                                     },
                                     _ => m.as_enum(),
