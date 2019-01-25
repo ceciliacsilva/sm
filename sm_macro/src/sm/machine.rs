@@ -91,15 +91,21 @@ impl Machine {
             }
         }
 
-        for i in &self.initial_states.0 {
-            if !states.iter().any(|s| s.name == i.name) {
-                states.push(State {
-                    name: i.name.clone(),
-                });
+        States(states)
+    }
+
+    fn terminal_states(&self) -> States {
+        let States(states) = self.states();
+        let States(non_terminal_states) = self.non_terminal_states();
+        let mut terminal_states: Vec<State> = Vec::new();
+
+        for s in states {
+            if !non_terminal_states.contains(&s) {
+                terminal_states.push(s)
             }
         }
 
-        States(states)
+        States(terminal_states)
     }
 
     fn events(&self) -> Events {
@@ -121,6 +127,8 @@ impl Parse for Machine {
     ///
     /// ```text
     /// TurnStile {
+    ///     GuardsResources { ... }
+    ///     ActionResources { ... }
     ///     InitialStates { ... }
     ///
     ///     Push { ... }
@@ -172,7 +180,10 @@ impl ToTokens for Machine {
         let states = &self.states();
         let events = &self.events();
         let machine_enum = MachineEnum { machine: &self };
+        let machine_eval = MachineEval { machine: &self };
         let transitions = &self.transitions;
+        let guard_resources = &self.guard_resources;
+        let action_resources = &self.action_resources;
 
         tokens.extend(quote! {
             #[allow(non_snake_case)]
@@ -209,7 +220,136 @@ impl ToTokens for Machine {
                 #machine_enum
                 #transitions
             }
+
+            //HERE
+            pub trait ValidEvent {
+                fn is_enabled(#guard_resources) -> bool;
+                fn action(#action_resources);
+            }
+
+            pub trait MachineEvaluation {
+                fn eval_machine(self, #guard_resources #action_resources) -> self;
+            }
+
+            use crate::#name::Variant;
+
+            #machine_eval
         });
+    }
+}
+
+#[derive(Debug)]
+struct MachineEval<'a> {
+    machine: &'a Machine,
+}
+
+impl<'a> MachineEval<'a> {
+    fn filter_transitions_from(&self, state: &State) -> Vec<Event> {
+        let mut result: Vec<Event> = Vec::new();
+        for t in &self.machine.transitions.0 {
+            let name = t.event.name.clone();
+            let from = t.from.name.clone();
+
+            if(from == state.name.clone()) {
+                result.push(Event{ name });
+            }
+        }
+
+        result
+    }
+
+    fn filter_variants(&self, state: &State) -> Vec<Ident> {
+        let mut variants = Vec::new();
+
+        for s in &self.machine.initial_states.0 {
+            let name = s.name.clone();
+            if (name == state.name.clone()) {
+                let variant = Ident::new(&format!("Initial{}", name), Span::call_site());
+
+                variants.push(variant);
+            }
+        }
+
+        for t in &self.machine.transitions.0 {
+            let to = t.to.name.clone();
+            let event = t.event.name.clone();
+            let variant = Ident::new(&format!("{}By{}", to, event), Span::call_site());
+
+            if variants.contains(&variant) {
+                continue;
+            }
+
+            if(to == state.name.clone()) {
+                variants.push(variant);
+            }
+        }
+
+        variants
+    }
+}
+
+impl<'a> ToTokens for MachineEval<'a> {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let name = &self.machine.name;
+        let guard_resources = &self.machine.guard_resources;
+        let action_resources = &self.machine.action_resources;
+
+        let mut m_variants = Vec::new();
+        let States(non_terminal_states) = &self.machine.non_terminal_states();
+        let States(terminal_states) = &self.machine.terminal_states();
+
+        // terminal states
+        for s in terminal_states {
+            let variants = &self.filter_variants(s);
+
+            for v in variants {
+                m_variants.push(quote!(
+                    Variant::#v(m) => { m.as_enum(), },
+                ));
+            }
+        }
+
+        // non terminal states
+        for s in non_terminal_states {
+            let variants = &self.filter_variants(s);
+
+            for v in variants {
+                let mut m_guards = Vec::new();
+                let transitions = &self.filter_transitions_from(s);
+
+                for t in transitions {
+                    let name = t.name.clone();
+
+                    m_guards.push(quote!(
+                        #name::is_enabled() => { #name::action(); m.transition(#name).as_enum() },
+                    ));
+                }
+
+                m_variants.push(quote!(
+                    Variant::#v(m) => {
+                        match true {
+                            #(#m_guards)*
+                            _ => m.as_enum(),
+                        }
+                    },
+                ));
+            }
+        }
+
+        tokens.extend(quote!{
+            impl MachineEvaluation for crate::#name::Variant {
+                fn eval_machine(self, #guard_resources #action_resources) -> self {
+                    let new_sm =
+                        match self {
+                            #(#m_variants)*
+                            _ => m.as_enum(),
+                        };
+
+                    new_sm
+                }
+            }
+        });
+
     }
 }
 
@@ -498,6 +638,43 @@ mod tests {
                     }
                 }
             }
+
+            pub trait ValidEvent {
+                fn is_enabled ( a : u8 , ) -> bool ;
+                fn action ( b: u16 , ) ;
+            }
+
+            pub trait MachineEvaluation {
+                fn eval_machine(self, a: u8, b: u16,) -> self;
+            }
+
+            use crate::TurnStile::Variant;
+            impl MachineEvaluation for crate::TurnStile::Variant {
+                fn eval_machine(self, a: u8, b: u16,) -> self {
+                    let new_sm =
+                        match self {
+                            Variant::InitialLocked(m) => {
+                                m.as_enum(),
+                            },
+                            Variant::LockedByPush(m) => {
+                                m.as_enum(),
+                            },
+                            Variant::InitialUnlocked(m) => {
+                                match true {
+                                    Push::is_enabled() => {
+                                        Push::action();
+                                        m.transition(Push).as_enum()
+                                    },
+                                    _ => m.as_enum(),
+                                }
+                            },
+                            _ => m.as_enum(),
+                        };
+
+                    new_sm
+                }
+            }
+
         };
 
         let mut right = TokenStream::new();
