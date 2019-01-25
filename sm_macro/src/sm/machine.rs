@@ -221,17 +221,18 @@ impl ToTokens for Machine {
                 #transitions
             }
 
-            //HERE
             pub trait ValidEvent {
                 fn is_enabled(#guard_resources) -> bool;
                 fn action(#action_resources);
             }
 
             pub trait MachineEvaluation {
-                fn eval_machine(self, #guard_resources #action_resources) -> self;
+                fn eval_machine(self, #guard_resources #action_resources) -> Self;
             }
 
             use crate::#name::Variant;
+            use crate::#name::Push;
+            use crate::#name::Coin;
 
             #machine_eval
         });
@@ -300,7 +301,6 @@ impl<'a> ToTokens for MachineEval<'a> {
         let States(non_terminal_states) = &self.machine.non_terminal_states();
         let States(terminal_states) = &self.machine.terminal_states();
 
-        // terminal states
         for s in terminal_states {
             let variants = &self.filter_variants(s);
 
@@ -319,25 +319,39 @@ impl<'a> ToTokens for MachineEval<'a> {
                 let mut m_guards = Vec::new();
                 let transitions = &self.filter_transitions_from(s);
 
-                for t in transitions {
+                for (i, t) in transitions.iter().enumerate() {
                     let name = t.name.clone();
                     let names_vars_guard = guard_resources.names();
                     let names_vars_action = action_resources.names();
+                    let result = quote!(#name::is_enabled(#(#names_vars_guard)*,));
 
-                    m_guards.push(quote!(
-                        #name::is_enabled(#(#names_vars_guard)*,) => {
-                            #name::action(#(#names_vars_action)*,);
-                            m.transition(#name).as_enum()
-                        },
-                    ));
+                    if i == 0 {
+                        m_guards.push(quote!(
+                            if #result {
+                                #name::action(#(#names_vars_action)*,);
+                                m.transition(#name).as_enum()
+                            }
+                        ));
+                    }
+                    else {
+                        m_guards.push(quote!(
+                            else if #result {
+                                #name::action(#(#names_vars_action)*,);
+                                m.transition(#name).as_enum()
+                            }
+                        ));
+                    }
                 }
+
+                m_guards.push(quote!(
+                    else {
+                        m.as_enum()
+                    }
+                ));
 
                 m_variants.push(quote!(
                     Variant::#v(m) => {
-                        match true {
-                            #(#m_guards)*
-                            _ => m.as_enum(),
-                        }
+                        #(#m_guards)*
                     },
                 ));
             }
@@ -345,11 +359,11 @@ impl<'a> ToTokens for MachineEval<'a> {
 
         tokens.extend(quote!{
             impl MachineEvaluation for crate::#name::Variant {
-                fn eval_machine(self, #guard_resources #action_resources) -> self {
+                fn eval_machine(self, #guard_resources #action_resources) -> Self {
                     let new_sm =
                         match self {
                             #(#m_variants)*
-                            _ => m.as_enum(),
+                            _ => self,
                         };
 
                     new_sm
