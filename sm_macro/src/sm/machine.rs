@@ -185,6 +185,14 @@ impl ToTokens for Machine {
         let guard_resources = &self.guard_resources;
         let action_resources = &self.action_resources;
 
+        let Events(inside_event) = events;
+        let mut use_events = Vec::new();
+
+        for e in inside_event {
+            let event_name = e.name.clone();
+            use_events.push(quote!(use crate::#name::#event_name;));
+        }
+
         tokens.extend(quote! {
             #[allow(non_snake_case)]
             mod #name {
@@ -231,8 +239,7 @@ impl ToTokens for Machine {
             }
 
             use crate::#name::Variant;
-            use crate::#name::Push;
-            use crate::#name::Coin;
+            #(#use_events)*
 
             #machine_eval
         });
