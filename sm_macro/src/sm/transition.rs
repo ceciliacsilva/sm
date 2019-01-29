@@ -62,7 +62,7 @@ impl ToTokens for Transition {
             impl<E: Event> Transition<#event> for Machine<#from, E> {
                 type Machine = Machine<#to, #event>;
 
-                fn transition(self, event: #event) -> Self::Machine {
+                fn transition(&self, event: #event) -> Self::Machine {
                     Machine(#to, Some(event))
                 }
             }

@@ -607,7 +607,7 @@ pub trait Transition<E: Event>: fmt::Debug {
 
     /// transition consumes the state machine and returns a new machine in the
     /// correct state, based on the passed in event.
-    fn transition(self, event: E) -> Self::Machine;
+    fn transition(&self, event: E) -> Self::Machine;
 }
 
 /// AsEnum provides the method to convert a state machine instance to an enum
