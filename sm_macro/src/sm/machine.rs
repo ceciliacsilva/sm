@@ -330,12 +330,12 @@ impl<'a> ToTokens for MachineEval<'a> {
                     let name = t.name.clone();
                     let names_vars_guard = guard_resources.names();
                     let names_vars_action = action_resources.names();
-                    let result = quote!(#name::is_enabled(#(#names_vars_guard)*,));
+                    let result = quote!(#name::is_enabled(#(#names_vars_guard),*));
 
                     if i == 0 {
                         m_guards.push(quote!(
                             if #result {
-                                #name::action(#(#names_vars_action)*,);
+                                #name::action(#(#names_vars_action),*);
                                 m.transition(#name).as_enum()
                             }
                         ));
@@ -343,7 +343,7 @@ impl<'a> ToTokens for MachineEval<'a> {
                     else {
                         m_guards.push(quote!(
                             else if #result {
-                                #name::action(#(#names_vars_action)*,);
+                                #name::action(#(#names_vars_action),*);
                                 m.transition(#name).as_enum()
                             }
                         ));
@@ -455,9 +455,12 @@ mod tests {
     fn test_machine_parse() {
         let left: Machine = syn::parse2(quote! {
            TurnStile {
-               GuardResources { a: u8 }
-               ActionResouces { b: u16 }
-
+               GuardResources {
+                   {a: u8}
+                   {b: u16} }
+               ActionResouces {
+                   {led: Led}
+                   {max: u16} }
                InitialStates { Locked, Unlocked }
 
                Coin { Locked => Unlocked }
@@ -471,11 +474,19 @@ mod tests {
                 Guard {
                     name: parse_quote! { a },
                     ty: parse_quote! { u8 },
+                },
+                Guard {
+                    name: parse_quote! { b },
+                    ty: parse_quote! { u16 },
                 }
             ]),
             action_resources: Actions(vec![
                 Action {
-                    name: parse_quote! { b },
+                    name: parse_quote! { led },
+                    ty: parse_quote! { Led },
+                },
+                Action {
+                    name: parse_quote! { max },
                     ty: parse_quote! { u16 },
                 }
             ]),
@@ -524,11 +535,19 @@ mod tests {
                 Guard {
                     name: parse_quote! { a },
                     ty: parse_quote! { u8 },
+                },
+                Guard {
+                    name: parse_quote! { b },
+                    ty: parse_quote! { u16 },
                 }
             ]),
             action_resources: Actions(vec![
                 Action {
-                    name: parse_quote! { b },
+                    name: parse_quote! { led },
+                    ty: parse_quote! { Led },
+                },
+                Action {
+                    name: parse_quote! { max },
                     ty: parse_quote! { u16 },
                 }
             ]),
@@ -668,17 +687,18 @@ mod tests {
             }
 
             pub trait ValidEvent {
-                fn is_enabled ( a : u8 , ) -> bool ;
-                fn action ( b: u16 , ) ;
+                fn is_enabled ( a : u8 , b: u16, ) -> bool ;
+                fn action (led: Led, max: u16 , ) ;
             }
 
             pub trait MachineEvaluation {
-                fn eval_machine(self, a: u8, b: u16,) -> self;
+                fn eval_machine(self, a: u8, b: u16, led: Led, max: u16,) -> Self;
             }
 
             use crate::TurnStile::Variant;
+            use crate::TurnStile::Push;
             impl MachineEvaluation for crate::TurnStile::Variant {
-                fn eval_machine(self, a: u8, b: u16,) -> self {
+                fn eval_machine(self, a: u8, b: u16, led: Led, max: u16,) -> Self {
                     let new_sm =
                         match self {
                             Variant::InitialLocked(m) => {
@@ -688,15 +708,15 @@ mod tests {
                                 m.as_enum(),
                             },
                             Variant::InitialUnlocked(m) => {
-                                match true {
-                                    Push::is_enabled(a,) => {
-                                        Push::action(b,);
-                                        m.transition(Push).as_enum()
-                                    },
-                                    _ => m.as_enum(),
+                                if Push::is_enabled(a,b) {
+                                    Push::action(led, max);
+                                    m.transition(Push).as_enum()
+                                }
+                                else {
+                                    m.as_enum()
                                 }
                             },
-                            _ => m.as_enum(),
+                            _ => self,
                         };
 
                     new_sm
