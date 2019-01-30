@@ -8,13 +8,13 @@ use syn::token::Comma;
 use syn::{Ident, braced, Token};
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Guard {
+pub struct Guard {
     pub name: Ident,
     pub ty: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Guards(pub Vec<Guard>);
+pub struct Guards(pub Vec<Guard>);
 
 impl Guards {
     pub fn names(&self) -> Vec<Ident> {
@@ -71,13 +71,13 @@ impl ToTokens for Guards {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Action {
+pub struct Action {
     pub name: Ident,
     pub ty: Ident,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Actions(pub Vec<Action>);
+pub struct Actions(pub Vec<Action>);
 
 impl Actions {
     pub fn names(&self) -> Vec<Ident> {

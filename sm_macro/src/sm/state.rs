@@ -6,7 +6,7 @@ use syn::parse::{Parse, ParseStream, Result};
 use syn::Ident;
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct States(pub Vec<State>);
+pub struct States(pub Vec<State>);
 
 impl ToTokens for States {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -41,7 +41,7 @@ impl<'a> IntoIterator for &'a States {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct State {
+pub struct State {
     pub name: Ident,
 }
 

@@ -2,7 +2,7 @@ use alloc::{format, vec::Vec};
 use proc_macro2::{Span, TokenStream};
 use quote::{quote, ToTokens};
 use syn::parse::{Parse, ParseStream, Result};
-use syn::{braced, parse_quote, Ident};
+use syn::{braced, parse_quote, Ident, Stmt};
 
 use crate::sm::event::{Event, Events};
 use crate::sm::initial_state::InitialStates;
@@ -11,7 +11,7 @@ use crate::sm::transition::Transitions;
 use crate::sm::resources::{Guard, Action, Guards, Actions};
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Machines(Vec<Machine>);
+pub struct Machines(pub Vec<Machine>);
 
 impl Parse for Machines {
     /// example machines tokens:
@@ -49,7 +49,7 @@ impl ToTokens for Machines {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Machine {
+pub struct Machine {
     pub name: Ident,
     pub initial_states: InitialStates,
     pub transitions: Transitions,
@@ -101,7 +101,7 @@ impl Machine {
 
         for s in states {
             if !non_terminal_states.contains(&s) {
-                terminal_states.push(s)
+                terminal_states.push(s);
             }
         }
 
@@ -227,29 +227,25 @@ impl ToTokens for Machine {
                 #events
                 #machine_enum
                 #transitions
+
+                pub trait ValidEvent {
+                    fn is_enabled(#guard_resources) -> bool;
+                    fn action(#action_resources);
+                }
+                pub trait MachineEvaluation {
+                    fn eval_machine(sm: &mut Variant, #guard_resources #action_resources) -> Self;
+                }
+
+                #machine_eval
             }
-
-            pub trait ValidEvent {
-                fn is_enabled(#guard_resources) -> bool;
-                fn action(#action_resources);
-            }
-
-            pub trait MachineEvaluation {
-                fn eval_machine(self, #guard_resources #action_resources) -> Self;
-            }
-
-            use crate::#name::Variant;
-            #(#use_events)*
-
-            #machine_eval
         });
     }
 }
 
 #[derive(Debug)]
 #[allow(single_use_lifetimes)]
-struct MachineEval<'a> {
-    machine: &'a Machine,
+pub struct MachineEval<'a> {
+    pub machine: &'a Machine,
 }
 
 impl<'a> MachineEval<'a> {
@@ -267,15 +263,15 @@ impl<'a> MachineEval<'a> {
         result
     }
 
-    fn filter_variants(&self, state: &State) -> Vec<Ident> {
+    fn filter_variants(&self, state: &State) -> Vec<(Ident, Ident)> {
         let mut variants = Vec::new();
 
         for s in &self.machine.initial_states.0 {
             let name = s.name.clone();
             if name == state.name.clone() {
                 let variant = Ident::new(&format!("Initial{}", name), Span::call_site());
-
-                variants.push(variant);
+                let none = Ident::new(&format!("NoneEvent"), Span::call_site());
+                variants.push((variant, none));
             }
         }
 
@@ -283,13 +279,12 @@ impl<'a> MachineEval<'a> {
             let to = t.to.name.clone();
             let event = t.event.name.clone();
             let variant = Ident::new(&format!("{}By{}", to, event), Span::call_site());
-
-            if variants.contains(&variant) {
-                continue;
-            }
+            // if variants.contains(&(&variant, &event)) {
+                // continue;
+            // }
 
             if to == state.name.clone() {
-                variants.push(variant);
+                variants.push((variant, event));
             }
         }
 
@@ -309,20 +304,22 @@ impl<'a> ToTokens for MachineEval<'a> {
         let States(terminal_states) = &self.machine.terminal_states();
 
         for s in terminal_states {
-            let variants = &self.filter_variants(s);
+            let variants_none = &self.filter_variants(s);
+            let name_state = &s.name;
 
-            for v in variants {
+            for (v, e) in variants_none {
                 m_variants.push(quote!(
-                    Variant::#v(m) => { m.as_enum(), },
+                    Variant::#v(m) => { Machine(#name_state, Some(#e)).as_enum() },
                 ));
             }
         }
 
         // non terminal states
         for s in non_terminal_states {
-            let variants = &self.filter_variants(s);
+            let variants_events = &self.filter_variants(s);
+            let name_state = &s.name;
 
-            for v in variants {
+            for (v, e) in variants_events {
                 let mut m_guards = Vec::new();
                 let transitions = &self.filter_transitions_from(s);
 
@@ -352,7 +349,7 @@ impl<'a> ToTokens for MachineEval<'a> {
 
                 m_guards.push(quote!(
                     else {
-                        m.as_enum()
+                        Machine(#name_state, Some(#e)).as_enum()
                     }
                 ));
 
@@ -365,12 +362,12 @@ impl<'a> ToTokens for MachineEval<'a> {
         }
 
         tokens.extend(quote!{
-            impl MachineEvaluation for crate::#name::Variant {
-                fn eval_machine(self, #guard_resources #action_resources) -> Self {
+            impl MachineEvaluation for Variant {
+                fn eval_machine(sm: &mut Variant, #guard_resources #action_resources) -> Self {
                     let new_sm =
-                        match self {
+                        match sm {
                             #(#m_variants)*
-                            _ => self,
+                            // _ => self,
                         };
 
                     new_sm
@@ -672,7 +669,7 @@ mod tests {
                 impl AsEnum for Machine<Locked, Push> {
                     type Enum = Variant;
 
-                    fn as_enum(self) -> Self::Enum {
+                    fn as_enum(&self) -> Self::Enum {
                         Variant::LockedByPush(self)
                     }
                 }

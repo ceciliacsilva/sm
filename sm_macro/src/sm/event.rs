@@ -6,7 +6,7 @@ use syn::Ident;
 
 #[allow(unused)]
 #[derive(Debug)]
-pub(crate) struct Events(pub Vec<Event>);
+pub struct Events(pub Vec<Event>);
 
 impl ToTokens for Events {
     fn to_tokens(&self, tokens: &mut TokenStream) {
@@ -31,7 +31,7 @@ impl ToTokens for Events {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Event {
+pub struct Event {
     pub name: Ident,
 }
 

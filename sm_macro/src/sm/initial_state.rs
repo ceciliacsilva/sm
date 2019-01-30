@@ -6,7 +6,7 @@ use syn::punctuated::Punctuated;
 use syn::{braced, Ident, Token};
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct InitialStates(pub Vec<InitialState>);
+pub struct InitialStates(pub Vec<InitialState>);
 
 impl Parse for InitialStates {
     /// example initial states tokens:
@@ -53,7 +53,7 @@ impl ToTokens for InitialStates {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct InitialState {
+pub struct InitialState {
     pub name: Ident,
 }
 

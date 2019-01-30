@@ -9,7 +9,7 @@ use crate::sm::event::Event;
 use crate::sm::state::State;
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Transitions(pub Vec<Transition>);
+pub struct Transitions(pub Vec<Transition>);
 
 impl Parse for Transitions {
     fn parse(input: ParseStream<'_>) -> Result<Self> {
@@ -46,7 +46,7 @@ impl ToTokens for Transitions {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct Transition {
+pub struct Transition {
     pub event: Event,
     pub from: State,
     pub to: State,
